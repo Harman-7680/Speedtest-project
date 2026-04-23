@@ -2,80 +2,62 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Speed Test Pro</title>
+    <title>Speed Test</title>
 
     <style>
       body {
-        margin: 0;
-        font-family: Arial;
         background: #0f172a;
         color: white;
+        font-family: Arial;
         text-align: center;
-      }
-
-      .container {
-        margin-top: 50px;
-      }
-
-      h1 {
-        margin-bottom: 20px;
       }
 
       #speed {
         font-size: 60px;
-        font-weight: bold;
-      }
-
-      .unit {
-        font-size: 20px;
+        margin-top: 20px;
       }
 
       button {
         padding: 12px 30px;
-        margin-top: 20px;
-        border: none;
         border-radius: 30px;
+        border: none;
         background: #22c55e;
-        color: black;
-        font-weight: bold;
+        margin-top: 20px;
         cursor: pointer;
       }
 
-      .stats {
-        margin-top: 30px;
-      }
-
       canvas {
-        margin-top: 30px;
+        margin-top: 40px;
       }
     </style>
   </head>
 
   <body>
-    <div class="container">
-      <h1>Speed Test</h1>
+    <h1>Speed Test</h1>
 
-      <canvas id="gauge" width="300" height="150"></canvas>
+    <canvas id="gauge" width="300" height="150"></canvas>
 
-      <div id="speed">0 <span class="unit">Mbps</span></div>
+    <div id="speed">0 Mbps</div>
 
-      <button onclick="startTest()">Start Test</button>
+    <button onclick="startTest()">Start Test</button>
 
-      <div class="stats">
-        <p>Ping: <span id="ping">--</span> ms</p>
-        <p>Upload: <span id="upload">--</span> Mbps</p>
-      </div>
-    </div>
+    <p>Ping: <span id="ping">--</span> ms</p>
+    <p>Upload: <span id="upload">--</span> Mbps</p>
 
     <script>
       const API = "https://affirmspace.com/speedtest.php";
-      const speedDisplay = document.getElementById("speed");
+      const ctx = document.getElementById("gauge").getContext("2d");
 
-      const canvas = document.getElementById("gauge");
-      const ctx = canvas.getContext("2d");
+      let currentSpeed = 0;
 
-      // Gauge draw
-      function drawGauge(speed) {
+      // Smooth animation
+      function smooth(newSpeed) {
+        currentSpeed = currentSpeed * 0.7 + newSpeed * 0.3;
+        return currentSpeed;
+      }
+
+      // Gauge
+      function draw(speed) {
         ctx.clearRect(0, 0, 300, 150);
 
         ctx.beginPath();
@@ -84,8 +66,8 @@
         ctx.lineWidth = 15;
         ctx.stroke();
 
-        let cappedSpeed = Math.min(speed, 100); // max 100 scale
-        let angle = Math.PI + (cappedSpeed / 100) * Math.PI;
+        let capped = Math.min(speed, 100);
+        let angle = Math.PI + (capped / 100) * Math.PI;
 
         ctx.beginPath();
         ctx.arc(150, 150, 100, Math.PI, angle);
@@ -94,77 +76,87 @@
         ctx.stroke();
       }
 
-      // Ping
+      // Ping (avg)
       async function pingTest() {
-        let start = Date.now();
-        await fetch(API + "?type=ping");
-        return Date.now() - start;
+        let arr = [];
+        for (let i = 0; i < 5; i++) {
+          let t = Date.now();
+          await fetch(API + "?type=ping");
+          arr.push(Date.now() - t);
+        }
+        return arr.reduce((a, b) => a + b) / arr.length;
       }
 
-      // Download (no streaming, shared hosting safe)
+      // DOWNLOAD (10 sec real test)
       async function downloadTest() {
+        let duration = 10000;
         let start = Date.now();
+        let total = 0;
 
-        let responses = await Promise.all([
-          fetch(API + "?type=download"),
-          fetch(API + "?type=download"),
-        ]);
+        while (Date.now() - start < duration) {
+          let res = await Promise.all([
+            fetch(API + "?type=download"),
+            fetch(API + "?type=download"),
+            fetch(API + "?type=download"),
+            fetch(API + "?type=download"),
+          ]);
 
-        let totalSize = 0;
+          for (let r of res) {
+            let blob = await r.blob();
+            total += blob.size;
+          }
 
-        for (let res of responses) {
-          let blob = await res.blob();
-          totalSize += blob.size;
+          let time = (Date.now() - start) / 1000;
+          let speed = (total * 8) / (time * 1000000);
+
+          let smoothSpeed = smooth(speed);
+
+          document.getElementById("speed").innerHTML =
+            smoothSpeed.toFixed(2) + " Mbps";
+
+          draw(smoothSpeed);
         }
 
-        let end = Date.now();
-        let time = (end - start) / 1000;
-
-        let speed = (totalSize * 8) / (time * 1000000);
-
-        speedDisplay.innerHTML =
-          speed.toFixed(2) + " <span class='unit'>Mbps</span>";
-        drawGauge(speed);
-
-        return speed;
+        let totalTime = (Date.now() - start) / 1000;
+        return (total * 8) / (totalTime * 1000000);
       }
 
-      // Upload
+      // UPLOAD (10 sec)
       async function uploadTest() {
-        let data = new Blob([new ArrayBuffer(1 * 1024 * 1024)]); // 1MB
-
+        let duration = 8000;
         let start = Date.now();
+        let total = 0;
 
-        await fetch(API + "?type=upload", {
-          method: "POST",
-          body: data,
-        });
+        while (Date.now() - start < duration) {
+          let data = new Blob([new ArrayBuffer(1 * 1024 * 1024)]);
 
-        let end = Date.now();
+          await fetch(API + "?type=upload", {
+            method: "POST",
+            body: data,
+          });
 
-        let time = (end - start) / 1000;
+          total += data.size;
+        }
 
-        return (data.size * 8) / (time * 1000000);
+        let totalTime = (Date.now() - start) / 1000;
+        return (total * 8) / (totalTime * 1000000);
       }
 
-      // Start Test
+      // MAIN FLOW (Ookla style)
       async function startTest() {
-        document.getElementById("upload").innerText = "--";
-        document.getElementById("ping").innerText = "--";
-        speedDisplay.innerHTML = "0 Mbps";
+        document.getElementById("speed").innerHTML = "0 Mbps";
+        draw(0);
 
-        drawGauge(0);
-
-        // Ping
+        // Ping first
         let ping = await pingTest();
-        document.getElementById("ping").innerText = ping;
+        document.getElementById("ping").innerText = ping.toFixed(0);
 
         // Download
-        let download = await downloadTest();
+        let down = await downloadTest();
 
         // Upload
-        let upload = await uploadTest();
-        document.getElementById("upload").innerText = upload.toFixed(2);
+        let up = await uploadTest();
+        document.getElementById("upload").innerText = up.toFixed(2);
       }
     </script>
   </body>
