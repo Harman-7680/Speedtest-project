@@ -68,13 +68,13 @@
     </div>
 
     <script>
-      const API = "https://affirmspace.com/api";
-      let speedDisplay = document.getElementById("speed");
+      const API = "https://affirmspace.com/speedtest.php";
+      const speedDisplay = document.getElementById("speed");
 
-      // Draw gauge
       const canvas = document.getElementById("gauge");
       const ctx = canvas.getContext("2d");
 
+      // Gauge draw
       function drawGauge(speed) {
         ctx.clearRect(0, 0, 300, 150);
 
@@ -84,7 +84,8 @@
         ctx.lineWidth = 15;
         ctx.stroke();
 
-        let angle = Math.PI + (speed / 100) * Math.PI;
+        let cappedSpeed = Math.min(speed, 100); // max 100 scale
+        let angle = Math.PI + (cappedSpeed / 100) * Math.PI;
 
         ctx.beginPath();
         ctx.arc(150, 150, 100, Math.PI, angle);
@@ -93,59 +94,48 @@
         ctx.stroke();
       }
 
-      // 🔹 Ping
+      // Ping
       async function pingTest() {
         let start = Date.now();
-        await fetch(API + "/ping");
+        await fetch(API + "?type=ping");
         return Date.now() - start;
       }
 
-      // 🔹 Download with animation
+      // Download (no streaming, shared hosting safe)
       async function downloadTest() {
         let start = Date.now();
 
-        let reqs = [];
-        for (let i = 0; i < 5; i++) {
-          reqs.push(fetch(API + "/download"));
-        }
+        let responses = await Promise.all([
+          fetch(API + "?type=download"),
+          fetch(API + "?type=download"),
+        ]);
 
-        let responses = await Promise.all(reqs);
-
-        let total = 0;
+        let totalSize = 0;
 
         for (let res of responses) {
-          let reader = res.body.getReader();
-          let received = 0;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            received += value.length;
-            total += value.length;
-
-            let elapsed = (Date.now() - start) / 1000;
-            let speed = (total * 8) / (elapsed * 1000000);
-
-            speedDisplay.innerHTML =
-              speed.toFixed(2) + " <span class='unit'>Mbps</span>";
-            drawGauge(speed);
-          }
+          let blob = await res.blob();
+          totalSize += blob.size;
         }
 
         let end = Date.now();
         let time = (end - start) / 1000;
 
-        return (total * 8) / (time * 1000000);
+        let speed = (totalSize * 8) / (time * 1000000);
+
+        speedDisplay.innerHTML =
+          speed.toFixed(2) + " <span class='unit'>Mbps</span>";
+        drawGauge(speed);
+
+        return speed;
       }
 
-      // 🔹 Upload
+      // Upload
       async function uploadTest() {
-        let data = new Blob([new ArrayBuffer(5 * 1024 * 1024)]);
+        let data = new Blob([new ArrayBuffer(1 * 1024 * 1024)]); // 1MB
 
         let start = Date.now();
 
-        await fetch(API + "/upload", {
+        await fetch(API + "?type=upload", {
           method: "POST",
           body: data,
         });
@@ -153,10 +143,11 @@
         let end = Date.now();
 
         let time = (end - start) / 1000;
+
         return (data.size * 8) / (time * 1000000);
       }
 
-      // START TEST
+      // Start Test
       async function startTest() {
         document.getElementById("upload").innerText = "--";
         document.getElementById("ping").innerText = "--";
@@ -164,11 +155,14 @@
 
         drawGauge(0);
 
+        // Ping
         let ping = await pingTest();
         document.getElementById("ping").innerText = ping;
 
+        // Download
         let download = await downloadTest();
 
+        // Upload
         let upload = await uploadTest();
         document.getElementById("upload").innerText = upload.toFixed(2);
       }
