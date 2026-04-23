@@ -6,10 +6,30 @@
 
     <style>
       body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
         background: #0f172a;
         color: white;
-        font-family: Arial;
         text-align: center;
+      }
+
+      .container {
+        margin-top: 40px;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+      }
+
+      #phase {
+        font-size: 18px;
+        color: #94a3b8;
+      }
+
+      #timer {
+        font-size: 22px;
+        margin-top: 10px;
+        color: #22c55e;
       }
 
       #speed {
@@ -19,38 +39,53 @@
 
       button {
         padding: 12px 30px;
-        border-radius: 30px;
         border: none;
+        border-radius: 30px;
         background: #22c55e;
+        color: black;
         margin-top: 20px;
         cursor: pointer;
+        font-weight: bold;
+      }
+
+      .stats {
+        margin-top: 20px;
       }
 
       canvas {
-        margin-top: 40px;
+        margin-top: 30px;
       }
     </style>
   </head>
 
   <body>
-    <h1>Speed Test</h1>
+    <div class="container">
+      <h1>Speed Test</h1>
 
-    <canvas id="gauge" width="300" height="150"></canvas>
+      <div id="phase">Ready</div>
+      <div id="timer">0s</div>
 
-    <div id="speed">0 Mbps</div>
+      <canvas id="gauge" width="300" height="150"></canvas>
 
-    <button onclick="startTest()">Start Test</button>
+      <div id="speed">0 Mbps</div>
 
-    <p>Ping: <span id="ping">--</span> ms</p>
-    <p>Upload: <span id="upload">--</span> Mbps</p>
+      <button onclick="startTest()">Start Test</button>
+
+      <div class="stats">
+        <p>Ping: <span id="ping">--</span> ms</p>
+        <p>Download: <span id="download">--</span> Mbps</p>
+        <p>Upload: <span id="upload">--</span> Mbps</p>
+      </div>
+    </div>
 
     <script>
       const API = "https://affirmspace.com/speedtest.php";
+
       const ctx = document.getElementById("gauge").getContext("2d");
 
       let currentSpeed = 0;
 
-      // Smooth animation
+      // Smooth
       function smooth(newSpeed) {
         currentSpeed = currentSpeed * 0.7 + newSpeed * 0.3;
         return currentSpeed;
@@ -76,7 +111,28 @@
         ctx.stroke();
       }
 
-      // Ping (avg)
+      // Timer UI
+      function startTimer(duration, label) {
+        let timerEl = document.getElementById("timer");
+        let phaseEl = document.getElementById("phase");
+
+        phaseEl.innerText = label;
+
+        return new Promise((resolve) => {
+          let time = duration;
+          let interval = setInterval(() => {
+            timerEl.innerText = time + "s";
+            time--;
+
+            if (time < 0) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 1000);
+        });
+      }
+
+      // Ping
       async function pingTest() {
         let arr = [];
         for (let i = 0; i < 5; i++) {
@@ -87,7 +143,7 @@
         return arr.reduce((a, b) => a + b) / arr.length;
       }
 
-      // DOWNLOAD (10 sec real test)
+      // Download
       async function downloadTest() {
         let duration = 10000;
         let start = Date.now();
@@ -109,19 +165,17 @@
           let time = (Date.now() - start) / 1000;
           let speed = (total * 8) / (time * 1000000);
 
-          let smoothSpeed = smooth(speed);
+          let s = smooth(speed);
 
-          document.getElementById("speed").innerHTML =
-            smoothSpeed.toFixed(2) + " Mbps";
-
-          draw(smoothSpeed);
+          document.getElementById("speed").innerText = s.toFixed(2) + " Mbps";
+          draw(s);
         }
 
         let totalTime = (Date.now() - start) / 1000;
         return (total * 8) / (totalTime * 1000000);
       }
 
-      // UPLOAD (10 sec)
+      // Upload
       async function uploadTest() {
         let duration = 8000;
         let start = Date.now();
@@ -136,27 +190,41 @@
           });
 
           total += data.size;
+
+          let time = (Date.now() - start) / 1000;
+          let speed = (total * 8) / (time * 1000000);
+
+          let s = smooth(speed);
+
+          document.getElementById("speed").innerText = s.toFixed(2) + " Mbps";
+          draw(s);
         }
 
         let totalTime = (Date.now() - start) / 1000;
         return (total * 8) / (totalTime * 1000000);
       }
 
-      // MAIN FLOW (Ookla style)
+      // MAIN FLOW
       async function startTest() {
-        document.getElementById("speed").innerHTML = "0 Mbps";
+        document.getElementById("speed").innerText = "0 Mbps";
         draw(0);
 
-        // Ping first
+        // Ping
+        document.getElementById("phase").innerText = "Testing Ping...";
         let ping = await pingTest();
         document.getElementById("ping").innerText = ping.toFixed(0);
 
         // Download
+        await startTimer(10, "Downloading...");
         let down = await downloadTest();
+        document.getElementById("download").innerText = down.toFixed(2);
 
         // Upload
+        await startTimer(8, "Uploading...");
         let up = await uploadTest();
         document.getElementById("upload").innerText = up.toFixed(2);
+
+        document.getElementById("phase").innerText = "Completed";
       }
     </script>
   </body>
